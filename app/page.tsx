@@ -1,135 +1,133 @@
-'use client';
+"use client";
 
-import { useMemo, useState } from 'react';
-import type { DisplayMode, View } from '@/lib/types';
-import { SetupView } from '@/components/views/SetupView';
-import { DisplayView } from '@/components/views/DisplayView';
-import { ModeratorView } from '@/components/views/ModeratorView';
-import { useClock } from '@/hooks/useClock';
-import { useTimeTravel } from '@/hooks/useTimeTravel';
-import { useTimer } from '@/hooks/useTimer';
+import { useEffect, useState } from "react";
+import { Loader } from "@/components/Loader";
+
+import { SetupView } from "@/components/views/SetupView";
+import { DisplayView } from "@/components/views/DisplayView";
+import { ModeratorView } from "@/components/views/ModeratorView";
+
+import { useClock } from "@/hooks/useClock";
+import { useTimer } from "@/hooks/useTimer";
+import { useTimeTravel } from "@/hooks/useTimeTravel";
+import type { DisplayMode, View } from "@/lib/types";
+
+// Simple HH:MM:SS -> ms (assumes valid-ish input)
+function hmsToMs(input: string, fallbackMs: number) {
+  const safe = (input || "").trim();
+  const parts = safe.split(":").map((p) => p.trim());
+  if (parts.length !== 3) return fallbackMs;
+
+  const h = Number(parts[0]);
+  const m = Number(parts[1]);
+  const s = Number(parts[2]);
+
+  if ([h, m, s].some((n) => Number.isNaN(n))) return fallbackMs;
+
+  // Basic bounds to avoid nonsense
+  const hh = Math.max(0, Math.min(99, h));
+  const mm = Math.max(0, Math.min(59, m));
+  const ss = Math.max(0, Math.min(59, s));
+
+  const totalSeconds = hh * 3600 + mm * 60 + ss;
+  if (totalSeconds <= 0) return fallbackMs;
+
+  return totalSeconds * 1000;
+}
 
 export default function Page() {
-  const [view, setView] = useState<View>('setup');
-  const [mode, setMode] = useState<DisplayMode>('countdown');
-
-  const [allowNegative, setAllowNegative] = useState<boolean>(true);
-  const [durationInput, setDurationInput] = useState<string>('5');
-
-  const [message, setMessage] = useState<string>('');
-  const [messageVisible, setMessageVisible] = useState<boolean>(false);
-
+  // Hooks must be unconditional
   const clockTime = useClock(1000);
+
+  const [view, setView] = useState<View>("setup");
+  const [mode, setMode] = useState<DisplayMode>("countdown");
+  const [allowNegative, setAllowNegative] = useState(true);
+
+  const [message, setMessage] = useState("");
+  const [messageVisible, setMessageVisible] = useState(false);
+
+  // HH:MM:SS
+  const [durationInput, setDurationInput] = useState("00:05:00");
+
+  // Timer + timetravel
+  const timer = useTimer({ initialDurationMs: 5 * 60 * 1000, allowNegative });
   const timeTravel = useTimeTravel();
 
-  const timer = useTimer({
-    allowNegative,
-    timeTravel: useMemo(
-      () => ({
-        isActive: timeTravel.isActive,
-        speed: timeTravel.speed,
-        targetTimeMs: timeTravel.targetTimeMs,
-        deactivate: timeTravel.deactivate,
-      }),
-      [timeTravel.isActive, timeTravel.speed, timeTravel.targetTimeMs, timeTravel.deactivate]
-    ),
-  });
+  // Splash overlay (no early return)
+  const [showSplash, setShowSplash] = useState(true);
+  const [splashExiting, setSplashExiting] = useState(false);
 
-  const durationMs = useMemo(() => {
-    const minutes = Number.parseFloat(durationInput);
-    if (!Number.isFinite(minutes) || minutes <= 0) return 5 * 60 * 1000;
-    return minutes * 60 * 1000;
-  }, [durationInput]);
+  useEffect(() => {
+    const SHOW_MS = 1800;
+    const FADE_MS = 500;
 
-  const handleStart = () => {
-    timer.start(durationMs);
-  };
-
-  const onStartDisplay = () => {
-    handleStart();
-    setView('display');
-  };
-
-  const onStartModerator = () => {
-    handleStart();
-    setView('moderator');
-  };
-
-  const onShowMessage = (msg: string) => {
-    setMessage(msg);
-    setMessageVisible(true);
-  };
-
-  const onHideMessage = () => {
-    setMessageVisible(false);
-  };
-
-  const onActivateTimeTravel = (hhmm: string) => {
-    if (timer.status !== 'running' || timer.remainingMs < 5000) {
-      alert('Timer must be running with at least 5 seconds remaining');
-      return;
-    }
-
-    const result = timeTravel.activateFromHHMM(hhmm, timer.remainingMs);
-
-    if (!result.ok) {
-      alert(result.error);
-    }
-  };
-
-  if (view === 'setup') {
-    return (
-      <SetupView
-        durationInput={durationInput}
-        setDurationInput={setDurationInput}
-        mode={mode}
-        setMode={setMode}
-        allowNegative={allowNegative}
-        setAllowNegative={setAllowNegative}
-        onStartDisplay={onStartDisplay}
-        onStartModerator={onStartModerator}
-      />
+    const t1 = window.setTimeout(
+      () => setSplashExiting(true),
+      SHOW_MS - FADE_MS
     );
-  }
+    const t2 = window.setTimeout(() => setShowSplash(false), SHOW_MS);
 
-  if (view === 'display') {
-    return (
-      <DisplayView
-        mode={mode}
-        remainingMs={timer.remainingMs}
-        isNegative={timer.isNegative}
-        clockTime={clockTime}
-        message={message}
-        messageVisible={messageVisible}
-        timeTravelActive={timeTravel.isActive}
-        timeTravelSpeed={timeTravel.speed}
-        timeTravelTargetMs={timeTravel.targetTimeMs}
-        onOpenModerator={() => setView('moderator')}
-      />
-    );
-  }
+    return () => {
+      window.clearTimeout(t1);
+      window.clearTimeout(t2);
+    };
+  }, []);
+
+  const startWithInput = (nextView: View) => {
+    const fallback = 5 * 60 * 1000;
+    const ms = hmsToMs(durationInput, fallback);
+
+    // Your useTimer expects duration passed into start()
+    timer.start(ms);
+
+    setView(nextView);
+  };
 
   return (
-    <ModeratorView
-      mode={mode}
-      setMode={setMode}
-      status={timer.status}
-      remainingMs={timer.remainingMs}
-      isNegative={timer.isNegative}
-      allowNegative={allowNegative}
-      onStart={handleStart}
-      onPauseResume={timer.pauseResume}
-      onReset={timer.reset}
-      onAdjustSeconds={(s) => timer.adjustTime(s * 1000)}
-      message={message}
-      messageVisible={messageVisible}
-      onShowMessage={onShowMessage}
-      onHideMessage={onHideMessage}
-      timeTravelActive={timeTravel.isActive}
-      timeTravelSpeed={timeTravel.speed}
-      timeTravelTargetMs={timeTravel.targetTimeMs}
-      onActivateTimeTravel={onActivateTimeTravel}
-      onViewDisplay={() => setView('display')}
-    />
+    <main className="min-h-screen">
+      {view === "setup" && (
+        <SetupView
+          durationInput={durationInput}
+          setDurationInput={setDurationInput}
+          mode={mode}
+          setMode={setMode}
+          allowNegative={allowNegative}
+          setAllowNegative={setAllowNegative}
+          onStartDisplay={() => startWithInput("display")}
+          onStartModerator={() => startWithInput("moderator")}
+        />
+      )}
+
+      {view === "display" && (
+        <DisplayView
+          mode={mode}
+          remainingMs={timer.remainingMs}
+          isNegative={timer.isNegative}
+          clockTime={clockTime}
+          message={message}
+          messageVisible={messageVisible}
+          timeTravelActive={timeTravel.isActive}
+          timeTravelSpeed={timeTravel.speed}
+          timeTravelTargetMs={timeTravel.targetTimeMs}
+          onOpenModerator={() => setView("moderator")}
+        />
+      )}
+
+      {view === "moderator" && (
+        <ModeratorView
+          mode={mode}
+          onModeChange={setMode}
+          timer={timer}
+          timeTravel={timeTravel}
+          message={message}
+          messageVisible={messageVisible}
+          onMessageChange={setMessage}
+          onMessageVisibleChange={setMessageVisible}
+          onViewDisplay={() => setView("display")}
+        />
+      )}
+
+      {showSplash && <Loader exiting={splashExiting} />}
+    </main>
   );
 }
