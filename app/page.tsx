@@ -5,7 +5,6 @@ import { Loader } from "@/components/Loader";
 
 import { SetupView } from "@/components/views/SetupView";
 import { DisplayView } from "@/components/views/DisplayView";
-import { ModeratorView } from "@/components/views/ModeratorView";
 
 import { useClock } from "@/hooks/useClock";
 import { useTimer } from "@/hooks/useTimer";
@@ -94,7 +93,6 @@ export default function Page() {
           allowNegative={allowNegative}
           setAllowNegative={setAllowNegative}
           onStartDisplay={() => startWithInput("display")}
-          onStartModerator={() => startWithInput("moderator")}
         />
       )}
 
@@ -109,21 +107,6 @@ export default function Page() {
           timeTravelActive={timeTravel.isActive}
           timeTravelSpeed={timeTravel.speed}
           timeTravelTargetMs={timeTravel.targetTimeMs}
-          onOpenModerator={() => setView("moderator")}
-        />
-      )}
-
-      {view === "moderator" && (
-        <ModeratorView
-          mode={mode}
-          onModeChange={setMode}
-          timer={timer}
-          timeTravel={timeTravel}
-          message={message}
-          messageVisible={messageVisible}
-          onMessageChange={setMessage}
-          onMessageVisibleChange={setMessageVisible}
-          onViewDisplay={() => setView("display")}
         />
       )}
 
