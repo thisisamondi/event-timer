@@ -15,7 +15,6 @@ type Props = {
   setAllowNegative: (v: boolean) => void;
 
   onStartDisplay: () => void;
-  onStartModerator: () => void;
 };
 
 function pad2(n: number) {
@@ -92,7 +91,6 @@ export function SetupView({
   allowNegative,
   setAllowNegative,
   onStartDisplay,
-  onStartModerator,
 }: Props) {
   const parsedSeconds = parseHmsToSeconds(durationInput);
   const isValid = parsedSeconds !== null && parsedSeconds > 0;
@@ -116,13 +114,47 @@ export function SetupView({
   ];
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-8">
+    <div className="min-h-screen bg-linear-to-br from-blue-50 to-indigo-100 p-8">
       <div className="max-w-2xl mx-auto">
         <h1 className="text-center text-gray-800 mb-8 font-mono font-bold tracking-tight text-6xl sm:text-7xl">
           Clockd
         </h1>
 
         <div className="bg-white rounded-lg shadow-lg p-8 space-y-6">
+          {/* Timer display */}
+          <div className="flex justify-center">
+            <div className="inline-block  text-gray-800  px-6 py-4">
+              <div className="flex justify-center">
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  value={durationInput}
+                  placeholder="00:05:00"
+                  onChange={(e) => setDurationInput(e.target.value)}
+                  onBlur={() => {
+                    const normalized = normalizeHms(durationInput);
+                    if (normalized) setDurationInput(normalized);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      const normalized = normalizeHms(durationInput);
+                      if (normalized) setDurationInput(normalized);
+                      (e.target as HTMLInputElement).blur();
+                    }
+                  }}
+                  className={[
+                    "text-6xl sm:text-7xl font-mono font-bold text-center",
+                    "bg-transparent outline-none border-b-2",
+                    isValid
+                      ? "border-transparent focus:border-blue-500"
+                      : "border-red-400",
+                    "w-[10ch]",
+                  ].join(" ")}
+                />
+              </div>
+            </div>
+          </div>
+
           {/* Display Mode */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -169,49 +201,6 @@ export function SetupView({
               </button>
             </div>
           </div>
-          {/* Duration HH:MM:SS */}
-          {(mode == "countdown" || mode == "both") && (
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Timer Duration (HH:MM:SS)
-              </label>
-
-              <input
-                type="time"
-                step="1"
-                inputMode="numeric"
-                value={durationInput}
-                onChange={(e) => setDurationInput(e.target.value)}
-                onBlur={() => {
-                  const normalized = normalizeHms(durationInput);
-                  if (normalized) setDurationInput(normalized);
-                }}
-                className={[
-                  "w-full px-4 py-2 border rounded-lg focus:ring-2 focus:border-transparent font-mono text-gray-700",
-                  isValid
-                    ? "border-gray-300 focus:ring-blue-500"
-                    : "border-red-300 focus:ring-red-400",
-                ].join(" ")}
-              />
-
-              <div className="mt-2 text-sm">
-                {isValid ? (
-                  <span className="text-gray-600">
-                    Parsed:{" "}
-                    <span className="font-medium">
-                      {secondsToHms(parsedSeconds!)}
-                    </span>
-                  </span>
-                ) : (
-                  <span className="text-red-600">
-                    Enter a valid time like{" "}
-                    <span className="font-mono">00:05:00</span> (MM and SS must
-                    be 00–59).
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
 
           {/* Quick adjust buttons */}
           {(mode == "countdown" || mode == "both") && (
@@ -251,7 +240,7 @@ export function SetupView({
           )}
 
           {/* Start buttons */}
-          <div className="grid grid-cols-2 gap-4 pt-4">
+          <div className="grid grid-cols-2 gap-4 pt-4 mx-auto">
             <button
               type="button"
               onClick={onStartDisplay}
@@ -259,16 +248,7 @@ export function SetupView({
               className="py-4 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Maximize2 className="inline mr-2" size={20} />
-              Start Display
-            </button>
-
-            <button
-              type="button"
-              onClick={onStartModerator}
-              disabled={!isValid}
-              className="py-4 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              Open Moderator Panel
+              Open Timer
             </button>
           </div>
         </div>
