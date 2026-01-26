@@ -1,6 +1,7 @@
 "use client";
 
 import { Clock, Maximize2, Timer } from "lucide-react";
+import { useState, useEffect } from "react";
 import type { DisplayMode } from "@/lib/types";
 
 type Props = {
@@ -82,6 +83,9 @@ function normalizeHms(input?: string): string | null {
   if (secs === null) return null;
   return secondsToHms(secs);
 }
+function formatClock(d: Date) {
+  return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
+}
 
 export function SetupView({
   durationInput,
@@ -95,6 +99,15 @@ export function SetupView({
   const parsedSeconds = parseHmsToSeconds(durationInput);
   const isValid = parsedSeconds !== null && parsedSeconds > 0;
 
+  const [now, setNow] = useState(new Date());
+
+  useEffect(() => {
+    if (mode === "clock" || mode === "both") {
+      const id = setInterval(() => setNow(new Date()), 1000);
+      return () => clearInterval(id);
+    }
+  }, [mode]);
+
   const applyDeltaSeconds = (delta: number) => {
     const base = parsedSeconds ?? 0;
     const next = Math.max(0, base + delta);
@@ -106,7 +119,6 @@ export function SetupView({
     { label: "+30s", deltaSec: 30 },
     { label: "+1m", deltaSec: 60 },
     { label: "+5m", deltaSec: 5 * 60 },
-    { label: "+15m", deltaSec: 15 * 60 },
     { label: "-10s", deltaSec: -10 },
     { label: "-30s", deltaSec: -30 },
     { label: "-1m", deltaSec: -60 },
@@ -122,38 +134,71 @@ export function SetupView({
 
         <div className="bg-white rounded-lg shadow-lg p-8 space-y-6">
           {/* Timer display */}
-          <div className="flex justify-center">
-            <div className="inline-block  text-gray-800  px-6 py-4">
-              <div className="flex justify-center">
-                <input
-                  type="text"
-                  inputMode="numeric"
-                  value={durationInput}
-                  placeholder="00:05:00"
-                  onChange={(e) => setDurationInput(e.target.value)}
-                  onBlur={() => {
-                    const normalized = normalizeHms(durationInput);
-                    if (normalized) setDurationInput(normalized);
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === "Enter") {
+          <div className="flex justify-center flex-col">
+            {(mode === "countdown" || mode === "both") && (
+              <div className="inline-block  text-gray-800  px-6 py-4">
+                <div className="flex justify-center">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    value={durationInput}
+                    placeholder="00:05:00"
+                    onChange={(e) => setDurationInput(e.target.value)}
+                    onBlur={() => {
                       const normalized = normalizeHms(durationInput);
                       if (normalized) setDurationInput(normalized);
-                      (e.target as HTMLInputElement).blur();
-                    }
-                  }}
-                  className={[
-                    "text-6xl sm:text-7xl font-mono font-bold text-center",
-                    "bg-transparent outline-none border-b-2",
-                    isValid
-                      ? "border-transparent focus:border-blue-500"
-                      : "border-red-400",
-                    "w-[10ch]",
-                  ].join(" ")}
-                />
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        const normalized = normalizeHms(durationInput);
+                        if (normalized) setDurationInput(normalized);
+                        (e.target as HTMLInputElement).blur();
+                      }
+                    }}
+                    className={[
+                      "text-6xl sm:text-7xl font-mono font-bold text-center",
+                      "bg-transparent outline-none border-b-2",
+                      isValid
+                        ? "border-transparent focus:border-blue-500"
+                        : "border-red-400",
+                      "w-[10ch]",
+                    ].join(" ")}
+                  />
+                </div>{" "}
+                <p className="text-center text-gray-400"> hh:mm:ss</p>
+              </div>
+            )}
+
+            {/* Clock display */}
+            {(mode === "clock" || mode === "both") && (
+              <div className={mode === "both" ? "mt-6" : ""}>
+                <div className="text-5xl sm:text-6xl font-mono font-semibold text-gray-700 text-center">
+                  {formatClock(now)}
+                </div>
+                <span className="block text-center text-sm text-gray-400 mt-3">
+                  clock
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* Quick adjust buttons */}
+          {(mode == "countdown" || mode == "both") && (
+            <div>
+              <div className="grid grid-cols-4 gap-2">
+                {quickButtons.map((b) => (
+                  <button
+                    key={b.label}
+                    type="button"
+                    onClick={() => applyDeltaSeconds(b.deltaSec)}
+                    className="py-2 rounded-lg font-medium transition bg-gray-100 text-gray-800 hover:bg-gray-200"
+                  >
+                    {b.label}
+                  </button>
+                ))}
               </div>
             </div>
-          </div>
+          )}
 
           {/* Display Mode */}
           <div>
@@ -202,24 +247,6 @@ export function SetupView({
             </div>
           </div>
 
-          {/* Quick adjust buttons */}
-          {(mode == "countdown" || mode == "both") && (
-            <div>
-              <div className="grid grid-cols-5 gap-2">
-                {quickButtons.map((b) => (
-                  <button
-                    key={b.label}
-                    type="button"
-                    onClick={() => applyDeltaSeconds(b.deltaSec)}
-                    className="py-2 rounded-lg font-medium transition bg-gray-100 text-gray-800 hover:bg-gray-200"
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-
           {/* Allow negative */}
           {(mode === "countdown" || mode === "both") && (
             <div className="flex items-center">
@@ -240,7 +267,7 @@ export function SetupView({
           )}
 
           {/* Start buttons */}
-          <div className="grid grid-cols-2 gap-4 pt-4 mx-auto">
+          <div className="grid grid-cols-2 pt-4 self-cente w-4/2">
             <button
               type="button"
               onClick={onStartDisplay}
@@ -248,7 +275,7 @@ export function SetupView({
               className="py-4 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Maximize2 className="inline mr-2" size={20} />
-              Open Timer
+              Start Timer
             </button>
           </div>
         </div>
