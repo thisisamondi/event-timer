@@ -23,7 +23,7 @@ export function ClockDisplay({ time, size = "xlarge", className = "" }: Props) {
         letterSpacing: "-0.02em",
       }}
     >
-      {formatClock(time)} testar
+      {formatClock(time)}
     </div>
   );
 }
