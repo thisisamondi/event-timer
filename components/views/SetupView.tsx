@@ -1,11 +1,12 @@
 "use client";
 
-import { Clock, Maximize2, Timer } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Clock, Maximize2, Timer, Square } from "lucide-react";
+import { useEffect, useState } from "react";
 import type { DisplayMode } from "@/lib/types";
 
+/* ================= PROPS ================= */
+
 type Props = {
-  /** HH:MM:SS string, e.g. "00:05:00" */
   durationInput: string;
   setDurationInput: (v: string) => void;
 
@@ -15,77 +16,44 @@ type Props = {
   allowNegative: boolean;
   setAllowNegative: (v: boolean) => void;
 
-  onStartDisplay: () => void;
+  running: boolean;
+  remainingMs: number | null;
+
+  onStartOrUpdate: () => void;
+  onStop: () => void;
+  onAddTime: (deltaMs: number) => void;
 };
+
+/* ================= HELPERS ================= */
 
 function pad2(n: number) {
   return String(n).padStart(2, "0");
 }
 
-function clamp(n: number, min: number, max: number) {
-  return Math.max(min, Math.min(max, n));
-}
+function formatMs(ms: number) {
+  const isNegative = ms < 0;
+  const total = Math.abs(Math.floor(ms / 1000));
 
-/**
- * Parse "HH:MM:SS" into total seconds.
- * Accepts:
- * - "H:MM:SS", "HH:MM:SS"
- * - "MM:SS" (interprets as 00:MM:SS)
- * - "SS" (interprets as 00:00:SS)
- */
-function parseHmsToSeconds(input?: string): number | null {
-  const raw = (input ?? "").trim();
-  if (!raw) return null;
-
-  const parts = raw.split(":").map((p) => p.trim());
-  if (parts.some((p) => p === "" || !/^\d+$/.test(p))) return null;
-
-  if (parts.length > 3) return null;
-
-  let h = 0,
-    m = 0,
-    s = 0;
-
-  if (parts.length === 3) {
-    h = Number(parts[0]);
-    m = Number(parts[1]);
-    s = Number(parts[2]);
-  } else if (parts.length === 2) {
-    m = Number(parts[0]);
-    s = Number(parts[1]);
-  } else {
-    s = Number(parts[0]);
-  }
-
-  if (m > 59 || s > 59) return null;
-
-  // allow large hours; clamp to something sane if you want (e.g. 0..99)
-  h = clamp(h, 0, 99);
-
-  return h * 3600 + m * 60 + s;
-}
-
-function secondsToHms(seconds: number): string {
-  const total = Math.max(0, Math.floor(seconds));
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
   const s = total % 60;
-  return `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+
+  const value = `${pad2(h)}:${pad2(m)}:${pad2(s)}`;
+  return isNegative ? `-${value}` : value;
 }
 
-/**
- * Normalizes user input on blur:
- * - if user types "5:00" -> "00:05:00"
- * - if user types "90" -> (invalid; because seconds must be 0-59)
- */
 function normalizeHms(input?: string): string | null {
-  const secs = parseHmsToSeconds(input);
-  if (secs === null) return null;
-  return secondsToHms(secs);
+  if (!input) return null;
+  const parts = input.split(":").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return null;
+  return `${pad2(parts[0])}:${pad2(parts[1])}:${pad2(parts[2])}`;
 }
+
 function formatClock(d: Date) {
   return `${pad2(d.getHours())}:${pad2(d.getMinutes())}:${pad2(d.getSeconds())}`;
 }
+
+/* ================= VIEW ================= */
 
 export function SetupView({
   durationInput,
@@ -94,11 +62,12 @@ export function SetupView({
   setMode,
   allowNegative,
   setAllowNegative,
-  onStartDisplay,
+  running,
+  remainingMs,
+  onStartOrUpdate,
+  onStop,
+  onAddTime,
 }: Props) {
-  const parsedSeconds = parseHmsToSeconds(durationInput);
-  const isValid = parsedSeconds !== null && parsedSeconds > 0;
-
   const [now, setNow] = useState(new Date());
 
   useEffect(() => {
@@ -108,21 +77,15 @@ export function SetupView({
     }
   }, [mode]);
 
-  const applyDeltaSeconds = (delta: number) => {
-    const base = parsedSeconds ?? 0;
-    const next = Math.max(0, base + delta);
-    setDurationInput(secondsToHms(next));
-  };
-
-  const quickButtons: Array<{ label: string; deltaSec: number }> = [
-    { label: "+10s", deltaSec: 10 },
-    { label: "+30s", deltaSec: 30 },
-    { label: "+1m", deltaSec: 60 },
-    { label: "+5m", deltaSec: 5 * 60 },
-    { label: "-10s", deltaSec: -10 },
-    { label: "-30s", deltaSec: -30 },
-    { label: "-1m", deltaSec: -60 },
-    { label: "-5m", deltaSec: -5 * 60 },
+  const quickButtons = [
+    { label: "+10s", delta: 10_000 },
+    { label: "+30s", delta: 30_000 },
+    { label: "+1m", delta: 60_000 },
+    { label: "+5m", delta: 5 * 60_000 },
+    { label: "-10s", delta: -10_000 },
+    { label: "-30s", delta: -30_000 },
+    { label: "-1m", delta: -60_000 },
+    { label: "-5m", delta: -5 * 60_000 },
   ];
 
   return (
@@ -133,11 +96,11 @@ export function SetupView({
         </h1>
 
         <div className="bg-white rounded-lg shadow-lg p-8 space-y-6">
-          {/* Timer display */}
+          {/* ===== MAIN DISPLAY (SAME POSITION) ===== */}
           <div className="flex justify-center flex-col">
             {(mode === "countdown" || mode === "both") && (
-              <div className="inline-block  text-gray-800  px-6 py-4">
-                <div className="flex justify-center">
+              <>
+                {!running && (
                   <input
                     type="text"
                     inputMode="numeric"
@@ -148,59 +111,57 @@ export function SetupView({
                       const normalized = normalizeHms(durationInput);
                       if (normalized) setDurationInput(normalized);
                     }}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        const normalized = normalizeHms(durationInput);
-                        if (normalized) setDurationInput(normalized);
-                        (e.target as HTMLInputElement).blur();
-                      }
-                    }}
                     className={[
                       "text-6xl sm:text-7xl font-mono font-bold text-center",
                       "bg-transparent outline-none border-b-2",
-                      isValid
-                        ? "border-transparent focus:border-blue-500"
-                        : "border-red-400",
-                      "w-[10ch]",
+                      "border-transparent focus:border-blue-500",
+                      "w-[10ch] mx-auto",
                     ].join(" ")}
                   />
-                </div>{" "}
-                <p className="text-center text-gray-400"> hh:mm:ss</p>
-              </div>
+                )}
+
+                {running && remainingMs !== null && (
+                  <div
+                    className={[
+                      "text-6xl sm:text-7xl font-mono font-bold text-center",
+                      remainingMs < 0 ? "text-red-600 " : "text-gray-800",
+                    ].join(" ")}
+                  >
+                    {formatMs(remainingMs)}
+                  </div>
+                )}
+
+                <p className="text-center text-gray-400 mt-2">
+                  {running ? "timer running" : "hh:mm:ss"}
+                </p>
+              </>
             )}
 
-            {/* Clock display */}
             {(mode === "clock" || mode === "both") && (
               <div className={mode === "both" ? "mt-6" : ""}>
                 <div className="text-5xl sm:text-6xl font-mono font-semibold text-gray-700 text-center">
                   {formatClock(now)}
                 </div>
-                <span className="block text-center text-sm text-gray-400 mt-3">
-                  clock
-                </span>
               </div>
             )}
           </div>
 
-          {/* Quick adjust buttons */}
-          {(mode == "countdown" || mode == "both") && (
-            <div>
-              <div className="grid grid-cols-4 gap-2">
-                {quickButtons.map((b) => (
-                  <button
-                    key={b.label}
-                    type="button"
-                    onClick={() => applyDeltaSeconds(b.deltaSec)}
-                    className="py-2 rounded-lg font-medium transition bg-gray-100 text-gray-800 hover:bg-gray-200"
-                  >
-                    {b.label}
-                  </button>
-                ))}
-              </div>
+          {/* ===== QUICK ADJUST (ONLY WHEN RUNNING) ===== */}
+          {running && (
+            <div className="grid grid-cols-4 gap-2">
+              {quickButtons.map((b) => (
+                <button
+                  key={b.label}
+                  onClick={() => onAddTime(b.delta)}
+                  className="py-2 rounded-lg font-medium bg-gray-100 text-gray-700 hover:bg-gray-200"
+                >
+                  {b.label}
+                </button>
+              ))}
             </div>
           )}
 
-          {/* Display Mode */}
+          {/* DISPLAY MODE */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
               Display Mode
@@ -208,9 +169,8 @@ export function SetupView({
 
             <div className="grid grid-cols-3 gap-3">
               <button
-                type="button"
                 onClick={() => setMode("countdown")}
-                className={`py-3 rounded-lg font-medium transition ${
+                className={`py-3 rounded-lg font-medium ${
                   mode === "countdown"
                     ? "bg-blue-600 text-white"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -221,9 +181,8 @@ export function SetupView({
               </button>
 
               <button
-                type="button"
                 onClick={() => setMode("clock")}
-                className={`py-3 rounded-lg font-medium transition ${
+                className={`py-3 rounded-lg font-medium ${
                   mode === "clock"
                     ? "bg-blue-600 text-white"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -234,9 +193,8 @@ export function SetupView({
               </button>
 
               <button
-                type="button"
                 onClick={() => setMode("both")}
-                className={`py-3 rounded-lg font-medium transition ${
+                className={`py-3 rounded-lg font-medium ${
                   mode === "both"
                     ? "bg-blue-600 text-white"
                     : "bg-gray-100 text-gray-700 hover:bg-gray-200"
@@ -247,36 +205,40 @@ export function SetupView({
             </div>
           </div>
 
-          {/* Allow negative */}
+          {/* ALLOW NEGATIVE */}
           {(mode === "countdown" || mode === "both") && (
             <div className="flex items-center">
               <input
                 type="checkbox"
-                id="allowNegative"
                 checked={allowNegative}
                 onChange={(e) => setAllowNegative(e.target.checked)}
-                className="w-4 h-4 text-blue-600 rounded focus:ring-blue-500"
+                className="w-4 h-4 text-blue-600"
               />
-              <label
-                htmlFor="allowNegative"
-                className="ml-2 text-sm text-gray-700"
-              >
-                Allow negative time (red background)
+              <label className="ml-2 text-sm text-gray-700">
+                Allow negative time
               </label>
             </div>
           )}
 
-          {/* Start buttons */}
-          <div className="grid grid-cols-2 pt-4 self-cente w-4/2">
+          {/* ===== ACTION BUTTONS ===== */}
+          <div className="grid grid-cols-2 gap-3">
             <button
-              type="button"
-              onClick={onStartDisplay}
-              disabled={!isValid}
-              className="py-4 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
+              onClick={onStartOrUpdate}
+              className="py-4 bg-green-600 text-white rounded-lg font-semibold hover:bg-green-700"
             >
               <Maximize2 className="inline mr-2" size={20} />
-              Start Timer
+              {running ? "Update timer" : "Start timer"}
             </button>
+
+            {running && (
+              <button
+                onClick={onStop}
+                className="py-4 bg-red-600 text-white rounded-lg font-semibold hover:bg-red-700"
+              >
+                <Square className="inline mr-2" size={20} />
+                Stop timer
+              </button>
+            )}
           </div>
         </div>
       </div>

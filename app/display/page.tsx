@@ -1,133 +1,75 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Maximize2, X } from "lucide-react";
-
+import { useEffect, useState } from "react";
+import DisplayView from "@/components/views/DisplayView";
 import type { DisplayMode } from "@/lib/types";
-import { ClockDisplay } from "@/components/timer/ClockDisplay";
-import { MessageOverlay } from "@/components/timer/MessageOverlay";
-import { TimeTravelBadge } from "@/components/timer/TimeTravelBadge";
-import { TimerDisplay } from "@/components/timer/TimerDisplay";
 
-type Props = {
-  mode: DisplayMode;
-  remainingMs: number;
-  isNegative: boolean;
+/* ================= TIMER SHARED STATE ================= */
 
-  clockTime: Date;
-
-  message: string;
-  messageVisible: boolean;
-
-  timeTravelActive: boolean;
-  timeTravelSpeed: number;
-  timeTravelTargetMs: number | null;
+type SharedTimerState = {
+  startTs: number | null;
+  durationMs: number;
+  offsetMs: number;
+  running: boolean;
 };
 
-export default function DisplayPage({
-  mode,
-  remainingMs,
-  isNegative,
-  clockTime,
-  message,
-  messageVisible,
-  timeTravelActive,
-  timeTravelSpeed,
-  timeTravelTargetMs,
-}: Props) {
-  const [isFullscreen, setIsFullscreen] = useState(false);
+const STORAGE_KEY = "clockd:timer";
+const channel = new BroadcastChannel("clockd-timer");
 
+const EMPTY_TIMER: SharedTimerState = {
+  startTs: null,
+  durationMs: 0,
+  offsetMs: 0,
+  running: false,
+};
+
+function safeLoadTimer(): SharedTimerState {
+  if (typeof window === "undefined") return EMPTY_TIMER;
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  if (!raw) return EMPTY_TIMER;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return EMPTY_TIMER;
+  }
+}
+
+/* ================= PAGE ================= */
+
+export default function DisplayPage() {
+  const [timer, setTimer] = useState<SharedTimerState>(EMPTY_TIMER);
+  const [now, setNow] = useState(Date.now());
+
+  // load + sync
   useEffect(() => {
-    const onChange = () => setIsFullscreen(Boolean(document.fullscreenElement));
-    document.addEventListener("fullscreenchange", onChange);
-    onChange();
-    return () => document.removeEventListener("fullscreenchange", onChange);
+    setTimer(safeLoadTimer());
+
+    channel.onmessage = (e) => setTimer(e.data);
+    return () => channel.close();
   }, []);
 
-  const enterFullscreen = useCallback(async () => {
-    try {
-      const el = document.documentElement;
-      if (el.requestFullscreen) await el.requestFullscreen();
-    } catch (err) {
-      console.error("Enter fullscreen failed:", err);
-    }
+  // tick
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 100);
+    return () => clearInterval(id);
   }, []);
 
-  const exitFullscreen = useCallback(async () => {
-    try {
-      if (document.fullscreenElement) {
-        await document.exitFullscreen();
-      }
-    } catch (err) {
-      console.error("Exit fullscreen failed:", err);
-    }
-  }, []);
+  const remainingMs =
+    timer.running && timer.startTs
+      ? timer.durationMs - (now - timer.startTs) + timer.offsetMs
+      : 0;
 
   return (
-    <div
-      className={`group relative min-h-screen flex flex-col items-center justify-center transition-colors duration-500 ${
-        isNegative ? "bg-red-600" : "bg-gray-900"
-      }`}
-    >
-      {/* Exit fullscreen (X) - top-right, only when fullscreen, hover only */}
-      {isFullscreen && (
-        <button
-          onClick={exitFullscreen}
-          className="
-            absolute top-4 right-4
-            opacity-0 pointer-events-none
-            group-hover:opacity-100 group-hover:pointer-events-auto
-            focus:opacity-100 focus:pointer-events-auto
-            transition-opacity
-            p-2 bg-white/10 text-white rounded-lg hover:bg-white/20
-          "
-          aria-label="Exit fullscreen"
-          title="Exit fullscreen"
-        >
-          <X size={18} />
-        </button>
-      )}
-
-      {/* Enter fullscreen (icon) - bottom-right, hover only */}
-      {!isFullscreen && (
-        <button
-          onClick={enterFullscreen}
-          className="
-            absolute bottom-4 right-4
-            opacity-0 pointer-events-none
-            group-hover:opacity-100 group-hover:pointer-events-auto
-            focus:opacity-100 focus:pointer-events-auto
-            transition-opacity
-            p-3 bg-white/10 text-white rounded-lg hover:bg-white/20
-          "
-          aria-label="Enter fullscreen"
-          title="Fullscreen"
-        >
-          <Maximize2 size={18} />
-        </button>
-      )}
-
-      <div className="text-center">
-        {(mode === "countdown" || mode === "both") && (
-          <TimerDisplay ms={remainingMs} isNegative={isNegative} size="large" />
-        )}
-
-        {(mode === "clock" || mode === "both") && (
-          <ClockDisplay
-            time={clockTime}
-            size={mode === "both" ? "medium" : "xlarge"}
-            className={mode === "both" ? "mt-8" : ""}
-          />
-        )}
-
-        <MessageOverlay message={message} visible={messageVisible} />
-
-        <TimeTravelBadge
-          active={timeTravelActive}
-          speed={timeTravelSpeed}
-          targetTimeMs={timeTravelTargetMs}
-        />
-      </div>
-    </div>
+    <DisplayView
+      mode={"countdown" as DisplayMode}
+      remainingMs={remainingMs}
+      isNegative={remainingMs < 0}
+      clockTime={new Date()}
+      message=""
+      messageVisible={false}
+      timeTravelActive={false}
+      timeTravelSpeed={1}
+      timeTravelTargetMs={null}
+    />
   );
 }

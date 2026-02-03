@@ -1,114 +1,155 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Loader } from "@/components/Loader";
-
 import { SetupView } from "@/components/views/SetupView";
-import DisplayPage from "@/app/display/page";
+import { Loader } from "@/components/Loader";
+import type { DisplayMode } from "@/lib/types";
 
-import { useClock } from "@/hooks/useClock";
-import { useTimer } from "@/hooks/useTimer";
-import { useTimeTravel } from "@/hooks/useTimeTravel";
-import type { DisplayMode, View } from "@/lib/types";
+/* ================= TIMER SHARED STATE ================= */
 
-// Simple HH:MM:SS -> ms (assumes valid-ish input)
-function hmsToMs(input: string, fallbackMs: number) {
-  const safe = (input || "").trim();
-  const parts = safe.split(":").map((p) => p.trim());
-  if (parts.length !== 3) return fallbackMs;
+type SharedTimerState = {
+  startTs: number | null;
+  durationMs: number;
+  offsetMs: number;
+  running: boolean;
+};
 
-  const h = Number(parts[0]);
-  const m = Number(parts[1]);
-  const s = Number(parts[2]);
+const STORAGE_KEY = "clockd:timer";
+const channel = new BroadcastChannel("clockd-timer");
 
-  if ([h, m, s].some((n) => Number.isNaN(n))) return fallbackMs;
+const EMPTY_TIMER: SharedTimerState = {
+  startTs: null,
+  durationMs: 0,
+  offsetMs: 0,
+  running: false,
+};
 
-  // Basic bounds to avoid nonsense
-  const hh = Math.max(0, Math.min(99, h));
-  const mm = Math.max(0, Math.min(59, m));
-  const ss = Math.max(0, Math.min(59, s));
-
-  const totalSeconds = hh * 3600 + mm * 60 + ss;
-  if (totalSeconds <= 0) return fallbackMs;
-
-  return totalSeconds * 1000;
+function safeLoadTimer(): SharedTimerState {
+  if (typeof window === "undefined") return EMPTY_TIMER;
+  const raw = window.localStorage.getItem(STORAGE_KEY);
+  if (!raw) return EMPTY_TIMER;
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return EMPTY_TIMER;
+  }
 }
 
-export default function Page() {
-  // Hooks must be unconditional
-  const clockTime = useClock(1000);
+function saveTimer(state: SharedTimerState) {
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  channel.postMessage(state);
+}
 
-  const [view, setView] = useState<View>("setup");
+function hmsToMs(input: string, fallbackMs: number) {
+  const parts = input.split(":").map(Number);
+  if (parts.length !== 3 || parts.some(Number.isNaN)) return fallbackMs;
+  return (
+    (Math.min(parts[0], 99) * 3600 +
+      Math.min(parts[1], 59) * 60 +
+      Math.min(parts[2], 59)) *
+    1000
+  );
+}
+
+/* ================= PAGE ================= */
+
+export default function Page() {
+  const [durationInput, setDurationInput] = useState("00:05:00");
   const [mode, setMode] = useState<DisplayMode>("countdown");
   const [allowNegative, setAllowNegative] = useState(true);
 
-  const [message, setMessage] = useState("");
-  const [messageVisible, setMessageVisible] = useState(false);
+  const [timer, setTimer] = useState<SharedTimerState>(EMPTY_TIMER);
+  const [now, setNow] = useState(Date.now());
 
-  // HH:MM:SS
-  const [durationInput, setDurationInput] = useState("00:05:00");
-
-  // Timer + timetravel
-  const timer = useTimer({ allowNegative });
-  const timeTravel = useTimeTravel();
-
-  // Splash overlay (no early return)
+  // splash
   const [showSplash, setShowSplash] = useState(true);
   const [splashExiting, setSplashExiting] = useState(false);
 
+  /* ===== INIT ===== */
+
   useEffect(() => {
-    const SHOW_MS = 1800;
-    const FADE_MS = 500;
+    setTimer(safeLoadTimer());
 
-    const t1 = window.setTimeout(
-      () => setSplashExiting(true),
-      SHOW_MS - FADE_MS,
-    );
-    const t2 = window.setTimeout(() => setShowSplash(false), SHOW_MS);
+    channel.onmessage = (e) => setTimer(e.data);
+    return () => channel.close();
+  }, []);
 
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    const t1 = setTimeout(() => setSplashExiting(true), 1300);
+    const t2 = setTimeout(() => setShowSplash(false), 1800);
     return () => {
-      window.clearTimeout(t1);
-      window.clearTimeout(t2);
+      clearTimeout(t1);
+      clearTimeout(t2);
     };
   }, []);
 
-  const startWithInput = (nextView: View) => {
-    const fallback = 5 * 60 * 1000;
-    const ms = hmsToMs(durationInput, fallback);
+  /* ===== DERIVED ===== */
 
-    // Your useTimer expects duration passed into start()
-    timer.start(ms);
+  const isRunning = timer.running;
 
-    setView(nextView);
+  const remainingMs =
+    timer.running && timer.startTs
+      ? timer.durationMs - (now - timer.startTs) + timer.offsetMs
+      : null;
+
+  /* ===== ACTIONS ===== */
+
+  const handlePrimaryAction = () => {
+    const ms = hmsToMs(durationInput, 5 * 60 * 1000);
+
+    if (!timer.running) {
+      // START TIMER
+      const next: SharedTimerState = {
+        startTs: Date.now(),
+        durationMs: ms,
+        offsetMs: 0,
+        running: true,
+      };
+      saveTimer(next);
+      setTimer(next);
+
+      // open display ONCE
+      window.open("/display", "_blank");
+    } else {
+      // UPDATE TIMER (no restart)
+      const next: SharedTimerState = {
+        ...timer,
+        durationMs: ms,
+      };
+      saveTimer(next);
+      setTimer(next);
+    }
   };
+
+  const addTime = (deltaMs: number) => {
+    if (!timer.running) return;
+    const next = { ...timer, offsetMs: timer.offsetMs + deltaMs };
+    saveTimer(next);
+    setTimer(next);
+  };
+
+  /* ===== RENDER ===== */
 
   return (
     <main className="min-h-screen">
-      {view === "setup" && (
-        <SetupView
-          durationInput={durationInput}
-          setDurationInput={setDurationInput}
-          mode={mode}
-          setMode={setMode}
-          allowNegative={allowNegative}
-          setAllowNegative={setAllowNegative}
-          onStartDisplay={() => startWithInput("display")}
-        />
-      )}
-
-      {view === "display" && (
-        <DisplayPage
-          mode={mode}
-          remainingMs={timer.remainingMs}
-          isNegative={timer.isNegative}
-          clockTime={clockTime}
-          message={message}
-          messageVisible={messageVisible}
-          timeTravelActive={timeTravel.isActive}
-          timeTravelSpeed={timeTravel.speed}
-          timeTravelTargetMs={timeTravel.targetTimeMs}
-        />
-      )}
+      <SetupView
+        durationInput={durationInput}
+        setDurationInput={setDurationInput}
+        mode={mode}
+        setMode={setMode}
+        allowNegative={allowNegative}
+        setAllowNegative={setAllowNegative}
+        onStartDisplay={handlePrimaryAction}
+        primaryLabel={isRunning ? "Update timer" : "Start timer"}
+        running={isRunning}
+        remainingMs={remainingMs}
+        onAddTime={addTime}
+      />
 
       {showSplash && <Loader exiting={splashExiting} />}
     </main>
