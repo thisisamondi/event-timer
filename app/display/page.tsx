@@ -22,11 +22,9 @@ type Props = {
   timeTravelActive: boolean;
   timeTravelSpeed: number;
   timeTravelTargetMs: number | null;
-
-  onOpenModerator: () => void;
 };
 
-export function DisplayView({
+export default function DisplayPage({
   mode,
   remainingMs,
   isNegative,
@@ -36,7 +34,6 @@ export function DisplayView({
   timeTravelActive,
   timeTravelSpeed,
   timeTravelTargetMs,
-  onOpenModerator,
 }: Props) {
   const [isFullscreen, setIsFullscreen] = useState(false);
 
@@ -72,22 +69,6 @@ export function DisplayView({
         isNegative ? "bg-red-600" : "bg-gray-900"
       }`}
     >
-      {/* Moderator button (hover only) - top-left */}
-      <button
-        onClick={onOpenModerator}
-        className="
-          absolute top-4 left-4
-          opacity-0 pointer-events-none
-          group-hover:opacity-100 group-hover:pointer-events-auto
-          focus:opacity-100 focus:pointer-events-auto
-          transition-opacity
-          px-3 py-2 bg-white/10 text-white rounded-lg hover:bg-white/20 text-sm
-        "
-        aria-label="Open moderator panel"
-      >
-        Moderator
-      </button>
-
       {/* Exit fullscreen (X) - top-right, only when fullscreen, hover only */}
       {isFullscreen && (
         <button

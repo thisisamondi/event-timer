@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader } from "@/components/Loader";
 
 import { SetupView } from "@/components/views/SetupView";
-import { DisplayView } from "@/components/views/DisplayView";
+import DisplayPage from "@/app/display/page";
 
 import { useClock } from "@/hooks/useClock";
 import { useTimer } from "@/hooks/useTimer";
@@ -49,7 +49,7 @@ export default function Page() {
   const [durationInput, setDurationInput] = useState("00:05:00");
 
   // Timer + timetravel
-  const timer = useTimer({ initialDurationMs: 5 * 60 * 1000, allowNegative });
+  const timer = useTimer({ allowNegative });
   const timeTravel = useTimeTravel();
 
   // Splash overlay (no early return)
@@ -62,7 +62,7 @@ export default function Page() {
 
     const t1 = window.setTimeout(
       () => setSplashExiting(true),
-      SHOW_MS - FADE_MS
+      SHOW_MS - FADE_MS,
     );
     const t2 = window.setTimeout(() => setShowSplash(false), SHOW_MS);
 
@@ -97,7 +97,7 @@ export default function Page() {
       )}
 
       {view === "display" && (
-        <DisplayView
+        <DisplayPage
           mode={mode}
           remainingMs={timer.remainingMs}
           isNegative={timer.isNegative}
