@@ -112,9 +112,9 @@ export function SetupView({
                       if (normalized) setDurationInput(normalized);
                     }}
                     className={[
-                      "text-6xl sm:text-7xl font-mono font-bold text-center",
-                      "bg-transparent outline-none border-b-2",
-                      "border-transparent focus:border-blue-500",
+                      "text-6xl sm:text-7xl font-mono font-bold text-center text-gray-400",
+                      "bg-transparent outline-none border-b-2 ",
+                      "border-transparent focus:border-blue-500 focus:text-gray-700",
                       "w-[10ch] mx-auto",
                     ].join(" ")}
                   />

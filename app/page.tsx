@@ -43,6 +43,7 @@ function saveTimer(state: SharedTimerState) {
 function hmsToMs(input: string, fallbackMs: number) {
   const parts = input.split(":").map(Number);
   if (parts.length !== 3 || parts.some(Number.isNaN)) return fallbackMs;
+
   return (
     (Math.min(parts[0], 99) * 3600 +
       Math.min(parts[1], 59) * 60 +
@@ -99,6 +100,7 @@ export default function Page() {
 
   /* ===== ACTIONS ===== */
 
+  // START / UPDATE
   const handlePrimaryAction = () => {
     const ms = hmsToMs(durationInput, 5 * 60 * 1000);
 
@@ -126,11 +128,20 @@ export default function Page() {
     }
   };
 
+  // ADD / SUBTRACT TIME
   const addTime = (deltaMs: number) => {
     if (!timer.running) return;
     const next = { ...timer, offsetMs: timer.offsetMs + deltaMs };
     saveTimer(next);
     setTimer(next);
+  };
+
+  // STOP TIMER
+  const stopTimer = () => {
+    saveTimer(EMPTY_TIMER);
+    setTimer(EMPTY_TIMER);
+
+    setDurationInput("00:00:00");
   };
 
   /* ===== RENDER ===== */
@@ -144,11 +155,11 @@ export default function Page() {
         setMode={setMode}
         allowNegative={allowNegative}
         setAllowNegative={setAllowNegative}
-        onStartDisplay={handlePrimaryAction}
-        primaryLabel={isRunning ? "Update timer" : "Start timer"}
         running={isRunning}
         remainingMs={remainingMs}
+        onStartOrUpdate={handlePrimaryAction}
         onAddTime={addTime}
+        onStop={stopTimer}
       />
 
       {showSplash && <Loader exiting={splashExiting} />}
